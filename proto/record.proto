@@ -1,0 +1,12 @@
+syntax = "proto3";
+
+package gobitcask.proto;
+
+option go_package = "github.com/ashish/gobitcask/proto";
+
+message Record {
+  string key = 1;
+  bytes value = 2;
+  int64 timestamp = 3;
+  bool deleted = 4;
+} 
