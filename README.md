@@ -48,6 +48,78 @@ go build ./cmd/gobitcask
    go build ./cmd/gobitcask
    ```
 
+## CLI Testing
+
+The implementation has been thoroughly tested with the following operations:
+
+### Basic Operations Tested
+
+1. **Store Complex JSON Data**:
+   ```bash
+   ./gobitcask put user:123 '{"name": "Alice", "age": 30}'
+   # Output: Successfully stored key: user:123
+   ```
+
+2. **Retrieve Data**:
+   ```bash
+   ./gobitcask get user:123
+   # Output: 
+   # {
+   #   "age": 30,
+   #   "name": "Alice"
+   # }
+   ```
+
+3. **Store Sensor Data**:
+   ```bash
+   ./gobitcask put sensor:1 '{"temperature": 25.5, "humidity": 60}'
+   # Output: Successfully stored key: sensor:1
+   ```
+
+4. **Store Simple String Values**:
+   ```bash
+   ./gobitcask put config:theme "dark"
+   # Output: Successfully stored key: config:theme
+   ```
+
+5. **List All Keys**:
+   ```bash
+   ./gobitcask list
+   # Output:
+   # Found 3 keys:
+   #   config:theme
+   #   sensor:1
+   #   user:123
+   ```
+
+6. **Delete Operations**:
+   ```bash
+   ./gobitcask delete config:theme
+   # Output: Successfully deleted key: config:theme
+   ```
+
+7. **Verify Deletion**:
+   ```bash
+   ./gobitcask list
+   # Output:
+   # Found 2 keys:
+   #   sensor:1
+   #   user:123
+   ```
+
+### Persistence Testing
+
+- **Data Recovery**: After closing and reopening the database, all data persists correctly
+- **Index Rebuilding**: The in-memory index is successfully rebuilt from data files on startup
+- **Format Detection**: The system correctly detects and uses the appropriate serialization format for each file
+
+### Performance Observations
+
+- **Fast Writes**: All write operations complete in milliseconds
+- **Instant Reads**: Read operations are nearly instantaneous due to in-memory indexing
+- **Efficient Storage**: Protocol Buffer format provides compact binary storage
+- **Thread Safety**: Concurrent operations are handled safely with RWMutex
+
 ## Development
 
 This Go implementation follows the same architecture as the Python version but leverages Go's performance advantages:
