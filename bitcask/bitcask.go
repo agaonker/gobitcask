@@ -24,6 +24,21 @@ type IndexEntry struct {
 	Timestamp int64 `json:"timestamp"`
 }
 
+// CacheStats tracks cache performance metrics
+type CacheStats struct {
+	Hits       int64
+	Misses     int64
+	Evictions  int64
+	LastAccess time.Time
+}
+
+// CacheEntry represents a file handle in the cache with metadata
+type CacheEntry struct {
+	File        *os.File
+	LastAccess  time.Time
+	AccessCount int64
+}
+
 // Bitcask represents a log-structured hash table for fast key/value data storage
 type Bitcask struct {
 	dataDir   string
@@ -39,6 +54,11 @@ type Bitcask struct {
 	activeFilePath       string
 	activeFileEntryCount int
 	activeFileLastWrite  time.Time
+
+	// Enhanced file handle cache for read operations
+	readFileCache map[int]*CacheEntry
+	cacheMaxSize  int
+	cacheStats    CacheStats
 
 	// Lock for thread safety
 	mutex sync.RWMutex
@@ -62,10 +82,13 @@ func New(directory string, debugMode *bool) (*Bitcask, error) {
 	}
 
 	bc := &Bitcask{
-		dataDir:   dataDir,
-		debugMode: debug,
-		format:    format,
-		index:     make(map[string]*IndexEntry),
+		dataDir:       dataDir,
+		debugMode:     debug,
+		format:        format,
+		index:         make(map[string]*IndexEntry),
+		readFileCache: make(map[int]*CacheEntry),
+		cacheMaxSize:  10, // Cache up to 10 read file handles
+		cacheStats:    CacheStats{LastAccess: time.Now()},
 	}
 
 	// Create data directory if it doesn't exist
@@ -78,7 +101,129 @@ func New(directory string, debugMode *bool) (*Bitcask, error) {
 		return nil, fmt.Errorf("failed to initialize: %w", err)
 	}
 
+	// Warm up cache with most recent files
+	if err := bc.warmupCache(); err != nil {
+		log.Printf("Warning: failed to warm up cache: %v", err)
+	}
+
 	return bc, nil
+}
+
+// warmupCache preloads the most recently used files into the cache
+func (bc *Bitcask) warmupCache() error {
+	dataFiles, err := bc.getDataFiles()
+	if err != nil {
+		return err
+	}
+
+	// Sort files by ID in descending order (newest first)
+	sort.Sort(sort.Reverse(sort.IntSlice(dataFiles)))
+
+	// Preload up to cacheMaxSize files
+	for i := 0; i < len(dataFiles) && i < bc.cacheMaxSize; i++ {
+		if _, err := bc.getReadFile(dataFiles[i]); err != nil {
+			log.Printf("Warning: failed to preload file %d: %v", dataFiles[i], err)
+		}
+	}
+
+	return nil
+}
+
+// getReadFile returns a cached file handle for reading, or opens a new one
+func (bc *Bitcask) getReadFile(fileID int) (*os.File, error) {
+	bc.mutex.Lock()
+	defer bc.mutex.Unlock()
+
+	// Check if file is already cached
+	if entry, exists := bc.readFileCache[fileID]; exists {
+		bc.cacheStats.Hits++
+		entry.LastAccess = time.Now()
+		entry.AccessCount++
+		return entry.File, nil
+	}
+
+	bc.cacheStats.Misses++
+
+	// Open new file for reading
+	filePath := bc.getDataFilePath(fileID)
+	file, err := os.Open(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open data file: %w", err)
+	}
+
+	// Add to cache, evicting least recently used if necessary
+	if len(bc.readFileCache) >= bc.cacheMaxSize {
+		bc.evictLRUFile()
+	}
+
+	bc.readFileCache[fileID] = &CacheEntry{
+		File:        file,
+		LastAccess:  time.Now(),
+		AccessCount: 1,
+	}
+	log.Printf("Cached read file handle for file ID %d", fileID)
+	return file, nil
+}
+
+// evictLRUFile removes the least recently used file handle
+func (bc *Bitcask) evictLRUFile() {
+	var lruID int
+	var lruEntry *CacheEntry
+	first := true
+
+	for fileID, entry := range bc.readFileCache {
+		if first || entry.LastAccess.Before(lruEntry.LastAccess) {
+			lruID = fileID
+			lruEntry = entry
+			first = false
+		}
+	}
+
+	if lruEntry != nil {
+		lruEntry.File.Close()
+		delete(bc.readFileCache, lruID)
+		bc.cacheStats.Evictions++
+		log.Printf("Evicted cached file handle for file ID %d (last access: %v, access count: %d)",
+			lruID, lruEntry.LastAccess, lruEntry.AccessCount)
+	}
+}
+
+// closeAllCachedFiles closes all cached file handles
+func (bc *Bitcask) closeAllCachedFiles() {
+	bc.mutex.Lock()
+	defer bc.mutex.Unlock()
+
+	for fileID, entry := range bc.readFileCache {
+		if err := entry.File.Close(); err != nil {
+			log.Printf("Warning: failed to close cached file %d: %v", fileID, err)
+		}
+	}
+	bc.readFileCache = make(map[int]*CacheEntry)
+}
+
+// GetCacheStats returns current cache statistics
+func (bc *Bitcask) GetCacheStats() CacheStats {
+	bc.mutex.RLock()
+	defer bc.mutex.RUnlock()
+	return bc.cacheStats
+}
+
+// SetCacheSize updates the maximum number of cached file handles
+func (bc *Bitcask) SetCacheSize(size int) error {
+	if size < 1 {
+		return fmt.Errorf("cache size must be at least 1")
+	}
+
+	bc.mutex.Lock()
+	defer bc.mutex.Unlock()
+
+	// If new size is smaller, evict excess entries
+	for len(bc.readFileCache) > size {
+		bc.evictLRUFile()
+	}
+
+	bc.cacheMaxSize = size
+	return nil
 }
 
 // initialize sets up the database state from existing files
@@ -333,7 +478,7 @@ func (bc *Bitcask) Put(key string, value interface{}) error {
 	return nil
 }
 
-// Get retrieves a value by key
+// Get retrieves a value by key using cached file handles
 func (bc *Bitcask) Get(key string) (interface{}, error) {
 	bc.mutex.RLock()
 	defer bc.mutex.RUnlock()
@@ -343,15 +488,14 @@ func (bc *Bitcask) Get(key string) (interface{}, error) {
 		return nil, fmt.Errorf("key not found: %s", key)
 	}
 
-	// Open the data file
-	filePath := bc.getDataFilePath(entry.FileID)
-	file, err := os.Open(filePath)
+	// Get cached file handle instead of opening new file
+	file, err := bc.getReadFile(entry.FileID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open data file: %w", err)
+		return nil, fmt.Errorf("failed to get data file: %w", err)
 	}
-	defer file.Close()
 
 	// Detect format
+	filePath := bc.getDataFilePath(entry.FileID)
 	format, err := bc.detectFormat(filePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to detect format: %w", err)
@@ -426,11 +570,15 @@ func (bc *Bitcask) ListKeys() []string {
 	return keys
 }
 
-// Close closes the database
+// Close closes the database and all cached file handles
 func (bc *Bitcask) Close() error {
 	bc.mutex.Lock()
 	defer bc.mutex.Unlock()
 
+	// Close all cached read file handles
+	bc.closeAllCachedFiles()
+
+	// Close active file
 	if bc.activeFile != nil {
 		return bc.activeFile.Close()
 	}
@@ -442,6 +590,9 @@ func (bc *Bitcask) Close() error {
 func (bc *Bitcask) Clear() error {
 	bc.mutex.Lock()
 	defer bc.mutex.Unlock()
+
+	// Close all cached file handles
+	bc.closeAllCachedFiles()
 
 	// Close active file
 	if bc.activeFile != nil {
