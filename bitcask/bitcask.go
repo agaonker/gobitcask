@@ -188,17 +188,22 @@ func (bc *Bitcask) evictLRUFile() {
 	}
 }
 
+// closeAllCachedFilesLocked closes all cached file handles (assumes mutex is locked)
+func (bc *Bitcask) closeAllCachedFilesLocked() {
+    for fileID, entry := range bc.readFileCache {
+        if err := entry.File.Close(); err != nil {
+            log.Printf("Warning: failed to close cached file %d: %v", fileID, err)
+        }
+    }
+    bc.readFileCache = make(map[int]*CacheEntry)
+}
+
 // closeAllCachedFiles closes all cached file handles
 func (bc *Bitcask) closeAllCachedFiles() {
-	bc.mutex.Lock()
-	defer bc.mutex.Unlock()
+    bc.mutex.Lock()
+    defer bc.mutex.Unlock()
 
-	for fileID, entry := range bc.readFileCache {
-		if err := entry.File.Close(); err != nil {
-			log.Printf("Warning: failed to close cached file %d: %v", fileID, err)
-		}
-	}
-	bc.readFileCache = make(map[int]*CacheEntry)
+    bc.closeAllCachedFilesLocked()
 }
 
 // GetCacheStats returns current cache statistics
