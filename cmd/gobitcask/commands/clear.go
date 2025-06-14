@@ -29,8 +29,11 @@ Use with caution!`,
 			if err != nil {
 				return fmt.Errorf("failed to create Bitcask instance: %w", err)
 			}
-			defer db.Close()
-
+			defer func() {
+				if cerr := db.Close(); cerr != nil {
+					fmt.Fprintf(cmd.ErrOrStderr(), "warning: failed to close db: %v\n", cerr)
+				}
+			}()
 			if err := db.Clear(); err != nil {
 				return fmt.Errorf("failed to clear database: %w", err)
 			}
