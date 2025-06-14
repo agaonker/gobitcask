@@ -30,7 +30,4 @@ It provides efficient and reliable storage with features like:
 	return rootCmd
 }
 
-// printError prints an error message and exits
-func printError(err error) {
-	fmt.Printf("Error: %v\n", err)
-}
+// (deleted; function unused)
