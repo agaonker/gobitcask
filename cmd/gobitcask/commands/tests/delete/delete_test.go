@@ -5,20 +5,10 @@ import (
 
 	"github.com/ashish/gobitcask/cmd/gobitcask/commands/tests/helpers"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestDeleteCommand(t *testing.T) {
-	helpers.SetupTestEnv(t)
-	rootCmd := helpers.NewTestRootCommand()
-
-	// Create a Bitcask instance for this test
-	bc := helpers.CreateTestBitcask(t)
-	defer bc.Close()
-
-	// First put some test data
-	_, err := helpers.ExecuteCommand(t, rootCmd, "put", "test:key", "test value")
-	assert.NoError(t, err)
-
 	tests := []struct {
 		name        string
 		args        []string
@@ -29,7 +19,6 @@ func TestDeleteCommand(t *testing.T) {
 			name:        "delete existing key",
 			args:        []string{"delete", "test:key"},
 			expectedOut: "Successfully deleted key: test:key",
-			expectError: false,
 		},
 		{
 			name:        "delete non-existent key",
@@ -53,62 +42,56 @@ func TestDeleteCommand(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			output, err := helpers.ExecuteCommand(t, rootCmd, tt.args...)
+			env := helpers.New(t)
+
+			if tt.name == "delete existing key" {
+				_, err := env.Run("put", "test:key", "test value")
+				require.NoError(t, err)
+			}
+
+			output, err := env.Run(tt.args...)
 
 			if tt.expectError {
 				assert.Error(t, err)
-				helpers.AssertOutputContains(t, output, tt.expectedOut)
 			} else {
 				assert.NoError(t, err)
-				helpers.AssertOutputContains(t, output, tt.expectedOut)
 			}
+			assert.Contains(t, output, tt.expectedOut)
 		})
 	}
 }
 
-func TestDeleteCommandWithFlags(t *testing.T) {
-	helpers.SetupTestEnv(t)
-	rootCmd := helpers.NewTestRootCommand()
+func TestDeleteVerifiesKeyGone(t *testing.T) {
+	env := helpers.New(t)
+	_, err := env.Run("put", "mykey", "myval")
+	require.NoError(t, err)
 
-	// Create a Bitcask instance for this test
-	bc := helpers.CreateTestBitcask(t)
-	defer bc.Close()
+	_, err = env.Run("delete", "mykey")
+	require.NoError(t, err)
 
-	// First put some test data with debug mode
-	_, err := helpers.ExecuteCommand(t, rootCmd, "put", "--debug", "test:key", "test value")
-	assert.NoError(t, err)
+	out, err := env.Run("get", "mykey")
+	assert.Error(t, err)
+	assert.Contains(t, out, "key not found")
+}
 
-	tests := []struct {
-		name        string
-		args        []string
-		expectedOut string
-		expectError bool
-	}{
-		{
-			name:        "delete with debug flag",
-			args:        []string{"delete", "--debug", "test:key"},
-			expectedOut: "Successfully deleted key: test:key",
-			expectError: false,
-		},
-		{
-			name:        "delete with custom data directory",
-			args:        []string{"delete", "--data-dir", "testdata", "test:key"},
-			expectedOut: "Successfully deleted key: test:key",
-			expectError: false,
-		},
-	}
+func TestDeleteCommandFlags(t *testing.T) {
+	t.Run("debug flag", func(t *testing.T) {
+		env := helpers.New(t)
+		_, err := env.Run("put", "--debug", "test:key", "test value")
+		require.NoError(t, err)
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			output, err := helpers.ExecuteCommand(t, rootCmd, tt.args...)
+		out, err := env.Run("delete", "--debug", "test:key")
+		assert.NoError(t, err)
+		assert.Contains(t, out, "Successfully deleted key: test:key")
+	})
 
-			if tt.expectError {
-				assert.Error(t, err)
-				helpers.AssertOutputContains(t, output, tt.expectedOut)
-			} else {
-				assert.NoError(t, err)
-				helpers.AssertOutputContains(t, output, tt.expectedOut)
-			}
-		})
-	}
+	t.Run("explicit data-dir flag", func(t *testing.T) {
+		env := helpers.New(t)
+		_, err := env.Run("put", "test:key", "test value")
+		require.NoError(t, err)
+
+		out, err := env.Run("delete", "--data-dir", env.DataDir, "test:key")
+		assert.NoError(t, err)
+		assert.Contains(t, out, "Successfully deleted key: test:key")
+	})
 }

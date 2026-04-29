@@ -36,9 +36,9 @@ The value will be displayed in JSON format if it's a complex type.`,
 			// Pretty print the value as JSON
 			jsonValue, err := json.MarshalIndent(value, "", "  ")
 			if err != nil {
-				fmt.Printf("%v\n", value)
+				fmt.Fprintf(cmd.OutOrStdout(), "%v\n", value)
 			} else {
-				fmt.Printf("%s\n", jsonValue)
+				fmt.Fprintf(cmd.OutOrStdout(), "%s\n", jsonValue)
 			}
 
 			return nil

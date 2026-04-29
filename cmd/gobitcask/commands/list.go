@@ -27,11 +27,11 @@ The keys are sorted alphabetically for easy reading.`,
 
 			keys := db.ListKeys()
 			if len(keys) == 0 {
-				fmt.Println("No keys found")
+				fmt.Fprintln(cmd.OutOrStdout(), "No keys found")
 			} else {
-				fmt.Printf("Found %d keys:\n", len(keys))
+				fmt.Fprintf(cmd.OutOrStdout(), "Found %d keys:\n", len(keys))
 				for _, key := range keys {
-					fmt.Printf("  %s\n", key)
+					fmt.Fprintf(cmd.OutOrStdout(), "  %s\n", key)
 				}
 			}
 

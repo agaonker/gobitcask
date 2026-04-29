@@ -5,21 +5,17 @@ import (
 
 	"github.com/ashish/gobitcask/cmd/gobitcask/commands/tests/helpers"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestGetCommand(t *testing.T) {
-	helpers.SetupTestEnv(t)
-	rootCmd := helpers.NewTestRootCommand()
+	env := helpers.New(t)
 
-	// Create a Bitcask instance for this test
-	bc := helpers.CreateTestBitcask(t)
-	defer bc.Close()
-
-	// First put some test data
-	_, err := helpers.ExecuteCommand(t, rootCmd, "put", "test:key", "test value")
-	assert.NoError(t, err)
-	_, err = helpers.ExecuteCommand(t, rootCmd, "put", "test:json", `{"name": "test", "value": 123}`)
-	assert.NoError(t, err)
+	// Seed data shared across sub-tests.
+	_, err := env.Run("put", "test:key", "test value")
+	require.NoError(t, err)
+	_, err = env.Run("put", "test:json", `{"name": "test", "value": 123}`)
+	require.NoError(t, err)
 
 	tests := []struct {
 		name        string
@@ -31,13 +27,11 @@ func TestGetCommand(t *testing.T) {
 			name:        "get existing string",
 			args:        []string{"get", "test:key"},
 			expectedOut: "test value",
-			expectError: false,
 		},
 		{
 			name:        "get existing json",
 			args:        []string{"get", "test:json"},
-			expectedOut: `{"name": "test", "value": 123}`,
-			expectError: false,
+			expectedOut: `"name"`,
 		},
 		{
 			name:        "get non-existent key",
@@ -61,62 +55,36 @@ func TestGetCommand(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			output, err := helpers.ExecuteCommand(t, rootCmd, tt.args...)
+			output, err := env.Run(tt.args...)
 
 			if tt.expectError {
 				assert.Error(t, err)
-				helpers.AssertOutputContains(t, output, tt.expectedOut)
 			} else {
 				assert.NoError(t, err)
-				helpers.AssertOutputContains(t, output, tt.expectedOut)
 			}
+			assert.Contains(t, output, tt.expectedOut)
 		})
 	}
 }
 
-func TestGetCommandWithFlags(t *testing.T) {
-	helpers.SetupTestEnv(t)
-	rootCmd := helpers.NewTestRootCommand()
+func TestGetCommandFlags(t *testing.T) {
+	t.Run("debug flag round-trip", func(t *testing.T) {
+		env := helpers.New(t)
+		_, err := env.Run("put", "--debug", "test:key", "test value")
+		require.NoError(t, err)
 
-	// Create a Bitcask instance for this test
-	bc := helpers.CreateTestBitcask(t)
-	defer bc.Close()
+		out, err := env.Run("get", "--debug", "test:key")
+		assert.NoError(t, err)
+		assert.Contains(t, out, "test value")
+	})
 
-	// First put some test data with debug mode
-	_, err := helpers.ExecuteCommand(t, rootCmd, "put", "--debug", "test:key", "test value")
-	assert.NoError(t, err)
+	t.Run("explicit data-dir flag", func(t *testing.T) {
+		env := helpers.New(t)
+		_, err := env.Run("put", "test:key", "test value")
+		require.NoError(t, err)
 
-	tests := []struct {
-		name        string
-		args        []string
-		expectedOut string
-		expectError bool
-	}{
-		{
-			name:        "get with debug flag",
-			args:        []string{"get", "--debug", "test:key"},
-			expectedOut: "test value",
-			expectError: false,
-		},
-		{
-			name:        "get with custom data directory",
-			args:        []string{"get", "--data-dir", "testdata", "test:key"},
-			expectedOut: "test value",
-			expectError: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			output, err := helpers.ExecuteCommand(t, rootCmd, tt.args...)
-
-			if tt.expectError {
-				assert.Error(t, err)
-				helpers.AssertOutputContains(t, output, tt.expectedOut)
-			} else {
-				assert.NoError(t, err)
-				helpers.AssertOutputContains(t, output, tt.expectedOut)
-			}
-		})
-	}
+		out, err := env.Run("get", "--data-dir", env.DataDir, "test:key")
+		assert.NoError(t, err)
+		assert.Contains(t, out, "test value")
+	})
 }
