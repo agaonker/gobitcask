@@ -40,7 +40,7 @@ Example: gobitcask put user:123 '{"name": "Alice", "age": 30}'`,
 				return fmt.Errorf("failed to put key-value: %w", err)
 			}
 
-			fmt.Printf("Successfully stored key: %s\n", key)
+			fmt.Fprintf(cmd.OutOrStdout(), "Successfully stored key: %s\n", key)
 			return nil
 		},
 	}

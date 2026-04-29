@@ -31,7 +31,7 @@ The operation is permanent and cannot be undone.`,
 				return fmt.Errorf("failed to delete key: %w", err)
 			}
 
-			fmt.Printf("Successfully deleted key: %s\n", key)
+			fmt.Fprintf(cmd.OutOrStdout(), "Successfully deleted key: %s\n", key)
 			return nil
 		},
 	}

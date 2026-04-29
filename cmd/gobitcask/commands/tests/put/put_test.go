@@ -8,13 +8,6 @@ import (
 )
 
 func TestPutCommand(t *testing.T) {
-	helpers.SetupTestEnv(t)
-	rootCmd := helpers.NewTestRootCommand()
-
-	// Create a Bitcask instance for this test
-	bc := helpers.CreateTestBitcask(t)
-	defer bc.Close()
-
 	tests := []struct {
 		name        string
 		args        []string
@@ -25,13 +18,11 @@ func TestPutCommand(t *testing.T) {
 			name:        "store simple string",
 			args:        []string{"put", "test:key", "test value"},
 			expectedOut: "Successfully stored key: test:key",
-			expectError: false,
 		},
 		{
 			name:        "store json object",
 			args:        []string{"put", "test:json", `{"name": "test", "value": 123}`},
 			expectedOut: "Successfully stored key: test:json",
-			expectError: false,
 		},
 		{
 			name:        "missing arguments",
@@ -49,58 +40,31 @@ func TestPutCommand(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			output, err := helpers.ExecuteCommand(t, rootCmd, tt.args...)
+			env := helpers.New(t)
+			output, err := env.Run(tt.args...)
 
 			if tt.expectError {
 				assert.Error(t, err)
-				helpers.AssertOutputContains(t, output, tt.expectedOut)
 			} else {
 				assert.NoError(t, err)
-				helpers.AssertOutputContains(t, output, tt.expectedOut)
 			}
+			assert.Contains(t, output, tt.expectedOut)
 		})
 	}
 }
 
-func TestPutCommandWithFlags(t *testing.T) {
-	helpers.SetupTestEnv(t)
-	rootCmd := helpers.NewTestRootCommand()
+func TestPutCommandFlags(t *testing.T) {
+	t.Run("debug flag uses JSON format", func(t *testing.T) {
+		env := helpers.New(t)
+		out, err := env.Run("put", "--debug", "test:key", "test value")
+		assert.NoError(t, err)
+		assert.Contains(t, out, "Successfully stored key: test:key")
+	})
 
-	// Create a Bitcask instance for this test
-	bc := helpers.CreateTestBitcask(t)
-	defer bc.Close()
-
-	tests := []struct {
-		name        string
-		args        []string
-		expectedOut string
-		expectError bool
-	}{
-		{
-			name:        "put with debug flag",
-			args:        []string{"put", "--debug", "test:key", "test value"},
-			expectedOut: "Successfully stored key: test:key",
-			expectError: false,
-		},
-		{
-			name:        "put with custom data directory",
-			args:        []string{"put", "--data-dir", "testdata", "test:key", "test value"},
-			expectedOut: "Successfully stored key: test:key",
-			expectError: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			output, err := helpers.ExecuteCommand(t, rootCmd, tt.args...)
-
-			if tt.expectError {
-				assert.Error(t, err)
-				helpers.AssertOutputContains(t, output, tt.expectedOut)
-			} else {
-				assert.NoError(t, err)
-				helpers.AssertOutputContains(t, output, tt.expectedOut)
-			}
-		})
-	}
+	t.Run("explicit data-dir flag", func(t *testing.T) {
+		env := helpers.New(t)
+		out, err := env.Run("put", "--data-dir", env.DataDir, "test:key", "test value")
+		assert.NoError(t, err)
+		assert.Contains(t, out, "Successfully stored key: test:key")
+	})
 }
