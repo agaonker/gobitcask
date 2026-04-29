@@ -25,9 +25,8 @@ func TestClearCommand(t *testing.T) {
 
 		out, err := env.Run("clear", "--force")
 		assert.NoError(t, err)
-		assert.Contains(t, out, "Successfully cleared database")
+		assert.Contains(t, out, "Successfully cleared all data")
 
-		// Verify all keys are gone.
 		listOut, err := env.Run("list")
 		assert.NoError(t, err)
 		assert.Contains(t, listOut, "No keys found")
@@ -49,7 +48,7 @@ func TestClearCommandFlags(t *testing.T) {
 
 		out, err := env.Run("clear", "--debug", "--force")
 		assert.NoError(t, err)
-		assert.Contains(t, out, "Successfully cleared database")
+		assert.Contains(t, out, "Successfully cleared all data")
 
 		listOut, err := env.Run("list", "--debug")
 		assert.NoError(t, err)
@@ -63,6 +62,6 @@ func TestClearCommandFlags(t *testing.T) {
 
 		out, err := env.Run("clear", "--data-dir", env.DataDir, "--force")
 		assert.NoError(t, err)
-		assert.Contains(t, out, "Successfully cleared database")
+		assert.Contains(t, out, "Successfully cleared all data")
 	})
 }
