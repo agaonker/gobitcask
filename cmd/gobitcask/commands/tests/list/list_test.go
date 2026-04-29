@@ -16,6 +16,8 @@ func TestListCommand(t *testing.T) {
 	require.NoError(t, err)
 	_, err = env.Run("put", "test:key2", "value2")
 	require.NoError(t, err)
+	_, err = env.Run("put", "other:key", "value3")
+	require.NoError(t, err)
 
 	tests := []struct {
 		name        string
@@ -27,6 +29,27 @@ func TestListCommand(t *testing.T) {
 			name:        "list all keys",
 			args:        []string{"list"},
 			expectedOut: "test:key1",
+		},
+		{
+			name:        "list with matching pattern",
+			args:        []string{"list", "test:*"},
+			expectedOut: "test:key1",
+		},
+		{
+			name:        "matching pattern excludes non-matching keys",
+			args:        []string{"list", "test:*"},
+			expectedOut: "Found 2 keys",
+		},
+		{
+			name:        "list with non-matching pattern",
+			args:        []string{"list", "nonexistent:*"},
+			expectedOut: "No keys found matching pattern: nonexistent:*",
+		},
+		{
+			name:        "too many arguments",
+			args:        []string{"list", "pattern", "extra"},
+			expectedOut: "Error: accepts at most 1 arg(s), received 2",
+			expectError: true,
 		},
 	}
 

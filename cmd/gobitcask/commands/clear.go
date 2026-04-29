@@ -38,7 +38,7 @@ Use with caution!`,
 				return fmt.Errorf("failed to clear database: %w", err)
 			}
 
-			fmt.Fprintln(cmd.OutOrStdout(), "Successfully cleared database")
+			fmt.Fprintln(cmd.OutOrStdout(), "Successfully cleared all data")
 			return nil
 		},
 	}
