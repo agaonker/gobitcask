@@ -41,8 +41,8 @@ data/
 *.log
 
 # Build artifacts
-gobitcask
-cmd/gobitcask/gobitcask
+/gobitcask
+/cmd/gobitcask/gobitcask
 
 # Test coverage
 coverage.out
