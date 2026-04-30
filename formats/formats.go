@@ -1,7 +1,6 @@
 package formats
 
 import (
-	"bufio"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
@@ -212,26 +211,38 @@ func (jf *JSONFormat) EncodeTombstone(key string, timestamp int64) ([]byte, erro
 	return result, nil
 }
 
-// ReadRecord reads a record from a reader in JSON format
+// ReadRecord reads a record from a reader in JSON format.
+// Reads one byte at a time to avoid buffering past the line boundary, which
+// would corrupt sequential reads on the same io.Reader.
 func (jf *JSONFormat) ReadRecord(reader io.Reader) (string, interface{}, int64, int, bool, error) {
-	scanner := bufio.NewScanner(reader)
-	if !scanner.Scan() {
-		if err := scanner.Err(); err != nil {
+	var line []byte
+	buf := make([]byte, 1)
+	for {
+		n, err := reader.Read(buf)
+		if n > 0 {
+			if buf[0] == '\n' {
+				break
+			}
+			line = append(line, buf[0])
+		}
+		if err == io.EOF {
+			if len(line) == 0 {
+				return "", nil, 0, 0, false, io.EOF
+			}
+			break // last line with no trailing newline
+		}
+		if err != nil {
 			return "", nil, 0, 0, false, err
 		}
-		return "", nil, 0, 0, false, io.EOF
 	}
 
-	line := scanner.Bytes()
 	var record JSONRecord
 	if err := json.Unmarshal(line, &record); err != nil {
 		return "", nil, 0, 0, false, fmt.Errorf("failed to unmarshal JSON: %w", err)
 	}
 
-	recordSize := len(line) + 1 // +1 for newline
-	isTombstone := record.Deleted
-
-	return record.Key, record.Value, record.Timestamp, recordSize, isTombstone, nil
+	recordSize := len(line) + 1 // +1 for the newline
+	return record.Key, record.Value, record.Timestamp, recordSize, record.Deleted, nil
 }
 
 // GetFormatByIdentifier returns the appropriate format based on the identifier byte
