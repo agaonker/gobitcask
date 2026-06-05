@@ -42,12 +42,10 @@ func TestCompactReclaimsSpace(t *testing.T) {
 		require.NoError(t, db.Delete(fmt.Sprintf("key:%d", i)))
 	}
 
-	// Force multiple data files by closing and reopening
-	require.NoError(t, db.Close())
-	db, err = bitcask.New(dir, &debug)
-	require.NoError(t, err)
+	// Rotate to create a second file — first file becomes immutable.
+	require.NoError(t, db.RotateActiveFile())
 
-	// Add more data to create second data file scenario
+	// Add more data to the new active file
 	for i := 20; i < 30; i++ {
 		require.NoError(t, db.Put(fmt.Sprintf("key:%d", i), fmt.Sprintf("val:%d", i)))
 	}
@@ -97,9 +95,8 @@ func TestCompactJSONFormat(t *testing.T) {
 		require.NoError(t, db.Put(fmt.Sprintf("j:%d", i), fmt.Sprintf("new:%d", i)))
 	}
 
-	require.NoError(t, db.Close())
-	db, err = bitcask.New(dir, &debug)
-	require.NoError(t, err)
+	// Rotate to make the first file immutable.
+	require.NoError(t, db.RotateActiveFile())
 
 	stats, err := db.Compact()
 	require.NoError(t, err)
@@ -152,12 +149,13 @@ func TestCompactPersistence(t *testing.T) {
 	}
 	require.NoError(t, db1.Close())
 
-	// Phase 2: reopen, add more, compact.
+	// Phase 2: reopen, add more, rotate to make first file immutable, compact.
 	db2, err := bitcask.New(dir, &debug)
 	require.NoError(t, err)
 	for i := 15; i < 20; i++ {
 		require.NoError(t, db2.Put(fmt.Sprintf("p:%d", i), i))
 	}
+	require.NoError(t, db2.RotateActiveFile())
 	_, err = db2.Compact()
 	require.NoError(t, err)
 	require.NoError(t, db2.Close())
