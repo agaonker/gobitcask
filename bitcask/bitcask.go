@@ -16,6 +16,11 @@ import (
 	"github.com/ashish/gobitcask/formats"
 )
 
+const (
+	// DefaultMaxEntriesPerFile is the max records in a single compacted output file.
+	DefaultMaxEntriesPerFile = 1000
+)
+
 // IndexEntry represents an entry in the in-memory index
 type IndexEntry struct {
 	FileID    int   `json:"file_id"`
@@ -62,6 +67,9 @@ type Bitcask struct {
 
 	// Lock for thread safety
 	mutex sync.RWMutex
+
+	// Compaction settings
+	maxEntriesPerFile int
 }
 
 // New creates a new Bitcask instance
@@ -82,13 +90,14 @@ func New(directory string, debugMode *bool) (*Bitcask, error) {
 	}
 
 	bc := &Bitcask{
-		dataDir:       dataDir,
-		debugMode:     debug,
-		format:        format,
-		index:         make(map[string]*IndexEntry),
-		readFileCache: make(map[int]*CacheEntry),
-		cacheMaxSize:  10, // Cache up to 10 read file handles
-		cacheStats:    CacheStats{LastAccess: time.Now()},
+		dataDir:           dataDir,
+		debugMode:         debug,
+		format:            format,
+		index:             make(map[string]*IndexEntry),
+		readFileCache:     make(map[int]*CacheEntry),
+		cacheMaxSize:      10, // Cache up to 10 read file handles
+		cacheStats:        CacheStats{LastAccess: time.Now()},
+		maxEntriesPerFile: DefaultMaxEntriesPerFile,
 	}
 
 	// Create data directory if it doesn't exist
