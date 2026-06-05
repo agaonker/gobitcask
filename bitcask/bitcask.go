@@ -16,6 +16,11 @@ import (
 	"github.com/ashish/gobitcask/formats"
 )
 
+const (
+	// DefaultMaxEntriesPerFile is the max records in a single compacted output file.
+	DefaultMaxEntriesPerFile = 1000
+)
+
 // IndexEntry represents an entry in the in-memory index
 type IndexEntry struct {
 	FileID    int   `json:"file_id"`
@@ -62,6 +67,9 @@ type Bitcask struct {
 
 	// Lock for thread safety
 	mutex sync.RWMutex
+
+	// Compaction settings
+	maxEntriesPerFile int
 }
 
 // New creates a new Bitcask instance
@@ -82,13 +90,14 @@ func New(directory string, debugMode *bool) (*Bitcask, error) {
 	}
 
 	bc := &Bitcask{
-		dataDir:       dataDir,
-		debugMode:     debug,
-		format:        format,
-		index:         make(map[string]*IndexEntry),
-		readFileCache: make(map[int]*CacheEntry),
-		cacheMaxSize:  10, // Cache up to 10 read file handles
-		cacheStats:    CacheStats{LastAccess: time.Now()},
+		dataDir:           dataDir,
+		debugMode:         debug,
+		format:            format,
+		index:             make(map[string]*IndexEntry),
+		readFileCache:     make(map[int]*CacheEntry),
+		cacheMaxSize:      10, // Cache up to 10 read file handles
+		cacheStats:        CacheStats{LastAccess: time.Now()},
+		maxEntriesPerFile: DefaultMaxEntriesPerFile,
 	}
 
 	// Create data directory if it doesn't exist
@@ -227,6 +236,11 @@ func (bc *Bitcask) SetCacheSize(size int) error {
 
 // initialize sets up the database state from existing files
 func (bc *Bitcask) initialize() error {
+	// Clean up leftover .tmp files from crashed compaction.
+	if err := bc.cleanupTmpFiles(); err != nil {
+		log.Printf("Warning: failed to clean up tmp files: %v", err)
+	}
+
 	// Find existing data files
 	dataFiles, err := bc.getDataFiles()
 	if err != nil {
@@ -292,7 +306,17 @@ func (bc *Bitcask) createNewDataFile() error {
 		bc.activeFile.Close()
 	}
 
-	bc.activeFileID++
+	// Find the highest existing file ID to avoid collisions after compaction.
+	dataFiles, err := bc.getDataFiles()
+	if err != nil {
+		// Fallback to simple increment.
+		bc.activeFileID++
+	} else if len(dataFiles) > 0 {
+		bc.activeFileID = dataFiles[len(dataFiles)-1] + 1
+	} else {
+		bc.activeFileID = 1
+	}
+
 	bc.activeFilePath = bc.getDataFilePath(bc.activeFileID)
 
 	// Create the file
@@ -329,6 +353,14 @@ func (bc *Bitcask) openActiveFile() error {
 	file, err := os.OpenFile(bc.activeFilePath, os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
 		return fmt.Errorf("failed to open active file: %w", err)
+	}
+
+	// Seek to end so that Seek(0, io.SeekCurrent) in Put returns the correct
+	// write offset. O_APPEND ensures writes go to EOF, but the read cursor
+	// starts at 0 on macOS/POSIX.
+	if _, err := file.Seek(0, io.SeekEnd); err != nil {
+		file.Close()
+		return fmt.Errorf("failed to seek to end of active file: %w", err)
 	}
 
 	bc.activeFile = file
@@ -568,6 +600,14 @@ func (bc *Bitcask) ListKeys() []string {
 
 	sort.Strings(keys)
 	return keys
+}
+
+// RotateActiveFile closes the current active file and creates a new one.
+// The previous active file becomes immutable and eligible for compaction.
+func (bc *Bitcask) RotateActiveFile() error {
+	bc.mutex.Lock()
+	defer bc.mutex.Unlock()
+	return bc.createNewDataFile()
 }
 
 // Close closes the database and all cached file handles

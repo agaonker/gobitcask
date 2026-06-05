@@ -169,7 +169,7 @@ The Go implementation provides significant performance improvements over the Pyt
 Following the same roadmap as the Python implementation:
 
 - [x] Core storage engine
-- [ ] Log compaction mechanism
+- [x] Log compaction mechanism
 - [ ] REST API server
 - [ ] Distributed features (future)
 

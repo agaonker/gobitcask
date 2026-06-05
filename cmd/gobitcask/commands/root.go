@@ -24,6 +24,7 @@ It provides efficient and reliable storage with features like:
 	rootCmd.AddCommand(newDeleteCommand())
 	rootCmd.AddCommand(newListCommand())
 	rootCmd.AddCommand(newClearCommand())
+	rootCmd.AddCommand(newCompactCommand())
 
 	return rootCmd
 }
